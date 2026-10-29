@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ashen Gauntlet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!--BODY-->
+<canvas id="c" tabindex="0" aria-label="Game view"></canvas>
+
+<div class="hud" id="hud" hidden>
+  <div class="hud-top">
+    <div class="trial">
+      <span class="eyebrow" id="eyebrow">Emberwick · 1-1</span>
+      <span class="room" id="room">Lowtown Market</span>
+      <span class="sub" id="bonfires">Bonfires lit: 1 of 2</span>
+    </div>
+    <div class="timer" id="timer">00:00.00</div>
+    <div class="tally">
+      <div class="souls" id="soulBox"><svg width="16" height="16" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1 L12 7 L7 13 L2 7 Z" stroke="#e0a052" stroke-width="1.5" fill="none"/></svg><span id="souls">0</span></div>
+      <span class="deaths" id="deaths">DEATHS 0</span>
+    </div>
+  </div>
+  <div class="hud-bottom">
+    <div class="note" id="note" hidden></div>
+    <div class="controls" id="ctlKb">
+      <span class="ctl"><span class="cap">W</span><span class="cap">A</span><span class="cap">S</span><span class="cap">D</span> Move</span>
+      <span class="ctl"><span class="cap accent wide">Space</span> Jump</span>
+      <span class="ctl"><span class="cap">Mouse</span> Look</span>
+      <span class="ctl"><span class="cap">R</span> Restart</span>
+    </div>
+    <div class="controls" id="ctlPad" hidden>
+      <span class="ctl"><span class="cap round">L</span> Move</span>
+      <span class="ctl"><span class="cap round accent">A</span> Jump</span>
+      <span class="ctl"><span class="cap round">R</span> Look</span>
+    </div>
+  </div>
+</div>
+
+<div class="banner" id="banner" hidden><span id="bannerText"></span></div>
+
+<section class="overlay" id="titleScreen">
+  <div class="panel">
+    <span class="eyebrow">A trial in nine parts</span>
+    <h1>Ashen Gauntlet</h1>
+    <p class="lede">From the lanes of Emberwick, through the halls of Castle Duskmoor, to the beacon at the top of the spire. Nothing here will fight you. Everything here will try to throw you off.</p>
+    <button class="btn" id="beginBtn" type="button">Begin</button>
+    <dl class="keys">
+      <dt>Keyboard</dt>
+      <div><span class="cap">WASD</span> Move</div>
+      <div><span class="cap">Space</span> Jump (hold for higher)</div>
+      <div><span class="cap">Mouse</span> Look</div>
+      <div><span class="cap">Esc</span> Pause · <span class="cap">R</span> Restart</div>
+      <dt>Controller</dt>
+      <div><span class="cap round">L</span> Move · <span class="cap round">R</span> Look</div>
+      <div><span class="cap round">A</span> Jump · Start pauses</div>
+    </dl>
+    <fieldset class="opts"><legend>Camera</legend>
+      <label class="opt"><input type="checkbox" id="invMouseT"> Invert Y axis (mouse)</label>
+      <label class="opt"><input type="checkbox" id="invPadT"> Invert Y axis (controller)</label>
+    </fieldset>
+    <p class="small">Made for desktop browsers. On a controller, Y flips controller invert in menus. <span id="build"></span></p>
+  </div>
+</section>
+
+<section class="overlay" id="selectScreen" hidden>
+  <div class="select">
+    <header class="select-head">
+      <span class="eyebrow">Choose your trial</span>
+      <h2>The Road to the Beacon</h2>
+    </header>
+    <div class="biomes" id="biomes"></div>
+    <button class="btn quiet" id="backBtn" type="button">Back</button>
+  </div>
+</section>
+
+<section class="overlay" id="pauseScreen" hidden>
+  <div class="panel">
+    <h2>Paused</h2>
+    <p>The flames will wait. The abyss will too.</p>
+    <button class="btn" id="resumeBtn" type="button">Resume</button>
+    <button class="btn quiet" id="restartBtn" type="button">Restart stage</button>
+    <button class="btn quiet" id="quitBtn" type="button">Stage select</button>
+    <fieldset class="opts"><legend>Camera</legend>
+      <label class="opt"><input type="checkbox" id="invMouseP"> Invert Y axis (mouse)</label>
+      <label class="opt"><input type="checkbox" id="invPadP"> Invert Y axis (controller)</label>
+      <label class="opt" for="sensP">Look sensitivity <input type="range" id="sensP" min="0.4" max="2" step="0.1"></label>
+    </fieldset>
+  </div>
+</section>
+
+<section class="overlay" id="clearScreen" hidden>
+  <div class="panel">
+    <span class="eyebrow" id="cEyebrow">The fog parts</span>
+    <h2 id="cTitle">Stage cleared</h2>
+    <div class="stats">
+      <div><b id="cTime">0</b><span>Time</span></div>
+      <div><b id="cDeaths">0</b><span>Deaths</span></div>
+      <div><b id="cSouls">0</b><span>Souls</span></div>
+    </div>
+    <p id="cBest"></p>
+    <p class="lede" id="cLore" hidden>The beacon of Duskmoor burns again, and the whole valley can see it. Whoever lit it did not fight a single foe. They simply refused to fall.</p>
+    <button class="btn" id="nextBtn" type="button">Next stage</button>
+    <button class="btn quiet" id="retryBtn" type="button">Try again</button>
+    <button class="btn quiet" id="selectBtn2" type="button">Stage select</button>
+  </div>
+</section>
+
+<div class="update" id="update" hidden role="status">
+  <span id="updateText">A new version is ready.</span>
+  <button class="btn small-btn" id="reloadBtn" type="button">Reload</button>
+  <button class="btn small-btn quiet" id="laterBtn" type="button">Later</button>
+</div>
+
+<section class="overlay" id="nogl" hidden>
+  <div class="panel"><h2>No WebGL</h2><p>This browser could not start 3D graphics. Try a current desktop Chrome, Edge or Firefox with hardware acceleration on.</p></div>
+</section>
+<!--/BODY-->
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
