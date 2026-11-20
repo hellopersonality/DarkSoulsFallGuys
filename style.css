@@ -106,3 +106,14 @@ body{background:var(--abyss);color:var(--bone);font-family:var(--body);font-size
 @media (max-width:860px){ .biomes{grid-template-columns:minmax(0,1fr)} }
 @media (max-width:700px){ .timer{top:110px} .controls{display:none} .room{font-size:19px} .keys{grid-template-columns:minmax(0,1fr)} .keys dt{grid-column:auto} }
 @media (prefers-reduced-motion:reduce){ .banner,.souls.pulse{animation:none} }
+
+/* speed lines: radial streaks at the screen edges when dashing, sliding or falling fast */
+.speed-lines{position:fixed;inset:0;pointer-events:none;opacity:0;z-index:0;
+  background:repeating-conic-gradient(from 0deg at 50% 50%,rgba(255,236,205,.0) 0deg,rgba(255,236,205,.0) 3.2deg,rgba(255,236,205,.38) 3.6deg,rgba(255,236,205,.0) 4deg);
+  -webkit-mask-image:radial-gradient(ellipse at center,transparent 38%,#000 85%);mask-image:radial-gradient(ellipse at center,transparent 38%,#000 85%);
+  animation:streak .12s steps(2) infinite}
+@keyframes streak{0%{transform:rotate(0deg) scale(1.02)}100%{transform:rotate(1.4deg) scale(1)}}
+.toast{position:fixed;left:50%;top:24%;transform:translateX(-50%);pointer-events:none;font-family:var(--display);font-size:15px;letter-spacing:.3em;text-transform:uppercase;
+  color:var(--ember);padding:8px 22px;background:rgba(11,10,9,.7);border-top:1px solid var(--line);border-bottom:1px solid var(--line);animation:toastIn .5s ease-out both}
+@keyframes toastIn{from{opacity:0;transform:translate(-50%,-6px)}to{opacity:1;transform:translate(-50%,0)}}
+@media (prefers-reduced-motion:reduce){ .speed-lines{animation:none} .toast{animation:none} }

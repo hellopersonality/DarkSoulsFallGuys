@@ -3,7 +3,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
 import { PHYS } from './phys.js';
 export { PHYS };
-const { R, H, STEP, MOVE, JUMP, GRAV } = PHYS;
+const { R, H, HS, STEP, MOVE, ACCEL, AIR, JUMP, JUMP2, GRAV, CUT, DASH, DASHT, DASHEND, SLIDE, SLIDET, AIRDECAY, DASHCD } = PHYS;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrapAngle = a => Math.atan2(Math.sin(a), Math.cos(a));
 const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -138,8 +138,11 @@ export function createEngine(canvas, hooks = {}) {
   const P = {
     pos: V3(), vel: V3(), grounded: false, ground: null, coyote: 0, buffer: 0, face: 0, stun: 0, hitCd: 0,
     squash: 0, walk: 0, tumble: 0, holding: false, lastSafe: V3(), fallV: 0, dead: false, done: false,
+    h: H, jumps: 0, canDash: true, dashT: 0, slideT: 0, dashCd: 0, dashBuf: 0, slideDir: V3(0, 0, -1),
+    noCut: false, bouncing: false, flip: 0, hitstop: 0, trailT: 0,
   };
-  const cam = { yaw: 0, pitch: 0.38, dist: 8.5, curDist: 8.5 };
+  const cam = { yaw: 0, pitch: 0.38, dist: 8.5, curDist: 8.5, fov: 62, shake: 0 };
+  function shake(a) { cam.shake = Math.min(1, Math.max(cam.shake, a)); }
   const camLook = V3();
   let cinematic = false;
   const ray = new THREE.Raycaster();
@@ -188,7 +191,7 @@ export function createEngine(canvas, hooks = {}) {
       vents: [], rollers: [], projectiles: [], turrets: [], crushers: [], spikes: [], winds: [], bonfires: [], orbs: [], notes: [],
       goal: null, lightBudget: 7, killY: def.killY ?? -12, checkpoint: null, stain: null, stainSouls: 0, souls: 0,
       bounds: { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity, minY: Infinity, maxY: -Infinity },
-      flash: 0, nextFlash: 6, particles: null,
+      flash: 0, nextFlash: 6, particles: null, lanterns: [], cpOrder: 0, tempo: def.tempo ?? 1.2,
     };
 
     // lights
@@ -204,6 +207,7 @@ export function createEngine(canvas, hooks = {}) {
     buildDecor(def, theme);
     buildStain();
     buildParticles(theme);
+    buildFxPools();
     for (const s of W.solids) refreshBounds(s);
 
     scene.add(player);
@@ -442,6 +446,7 @@ export function createEngine(canvas, hooks = {}) {
         break;
       }
       case 'bonfire': W.pendingYaw = o.yaw; buildBonfire(x, y, z, o.spawn, !!o.start); break;
+      case 'lantern': buildLantern(x, y, z, o.spawn, o.yaw); break;
       case 'soul': {
         const m = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10), glowMat(0xfff0d0, 1));
         m.add(new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 10), glowMat(0xe0a052, 0.28)));
@@ -481,11 +486,65 @@ export function createEngine(canvas, hooks = {}) {
     const flame = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.1, 10, 1, true), glowMat(0xff8a30, 0.8)); flame.position.y = 0.72; g.add(flame);
     const core = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.6, 8, 1, true), glowMat(0xffe0a0, 0.9)); core.position.y = 0.5; g.add(core);
     const light = new THREE.PointLight(0xff9a48, 0, 16, 2); light.position.y = 1.4; g.add(light);
-    const b = { g, flame, core, light, lit: false, start, pos: V3(x, y, z), spawn: V3(...(spawn || [x + 1.5, y, z + 1])), yaw: W.pendingYaw };
+    const b = { g, flame, core, light, lit: false, start, pos: V3(x, y, z), spawn: V3(...(spawn || [x + 1.5, y, z + 1])), yaw: W.pendingYaw, order: W.cpOrder++ };
     setLit(b, start);
     W.bonfires.push(b);
   }
   function setLit(b, lit) { b.lit = lit; b.flame.visible = b.core.visible = lit; b.light.intensity = lit ? 40 : 0; }
+
+  // lanterns: small checkpoints between bonfires
+  function buildLantern(x, y, z, spawn, yaw) {
+    const g = new THREE.Group(); g.position.set(x, y, z); W.scene.add(g);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 2.3, 6), W.M.iron); post.position.y = 1.15; post.castShadow = true; g.add(post);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.06, 0.06), W.M.iron); arm.position.set(0.28, 2.25, 0); g.add(arm);
+    const cage = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.24, 0.45, 6, 1, true), new THREE.MeshStandardMaterial({ color: 0x2a2622, metalness: 0.7, roughness: 0.5, wireframe: true }));
+    cage.position.set(0.55, 1.95, 0); g.add(cage);
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), glowMat(0x5a2a18, 0.6)); glow.position.copy(cage.position); g.add(glow);
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 10), glowMat(0xffa040, 0)); halo.position.copy(cage.position); g.add(halo);
+    const l = { kind: 'lantern', g, glow, halo, lit: false, pos: V3(x, y, z), spawn: V3(...(spawn || [x - 1.2, y, z])), yaw, order: W.cpOrder++ };
+    W.lanterns.push(l);
+  }
+  function setLanternLit(l, lit) {
+    l.lit = lit;
+    l.glow.material.color.set ? l.glow.material.color.set(lit ? 0xffe0a0 : 0x5a2a18) : null;
+    l.glow.material.opacity = lit ? 1 : 0.6;
+    l.halo.material.opacity = lit ? 0.35 : 0;
+  }
+
+  // pooled effects: dust puffs, dash afterimages, double-jump ring
+  function buildFxPools() {
+    const dustMat = () => new THREE.MeshBasicMaterial({ color: 0xcbbba0, transparent: true, opacity: 0, depthWrite: false });
+    const dustGeo = new THREE.SphereGeometry(0.22, 8, 6);
+    W.dust = Array.from({ length: 18 }, () => { const m = new THREE.Mesh(dustGeo, dustMat()); m.visible = false; W.scene.add(m); return { m, life: 0, max: 1, v: V3() }; });
+    const ghostGeo = new THREE.CapsuleGeometry(0.42, 0.55, 4, 10);
+    W.ghosts = Array.from({ length: 8 }, () => { const m = new THREE.Mesh(ghostGeo, glowMat(0xffa860, 0)); m.visible = false; W.scene.add(m); return { m, life: 0 }; });
+    W.ring = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.75, 28), glowMat(0xffd8a0, 0));
+    W.ring.rotation.x = -Math.PI / 2; W.ring.visible = false; W.scene.add(W.ring); W.ringLife = 0;
+  }
+  function puff(x, y, z, n = 5, spread = 1, up = 1.2) {
+    for (let i = 0; i < n; i++) {
+      const d = W.dust.find(p => p.life <= 0) || W.dust[(Math.random() * W.dust.length) | 0];
+      const a = Math.random() * Math.PI * 2, s = (0.6 + Math.random()) * spread * 2.2;
+      d.m.position.set(x + Math.cos(a) * 0.3, y + 0.15, z + Math.sin(a) * 0.3);
+      d.v.set(Math.cos(a) * s, up * (0.4 + Math.random() * 0.6), Math.sin(a) * s);
+      d.life = d.max = 0.35 + Math.random() * 0.25; d.m.visible = true; d.m.scale.setScalar(0.6);
+    }
+  }
+  function ghost() {
+    const g = W.ghosts.find(p => p.life <= 0) || W.ghosts[0];
+    g.m.position.set(P.pos.x, P.pos.y + (P.slideT > 0 ? 0.45 : 0.85), P.pos.z);
+    g.m.rotation.set(P.slideT > 0 ? Math.PI / 2 : 0, P.face, 0);
+    g.life = 0.22; g.m.visible = true;
+  }
+  function ringBurst() { W.ring.position.set(P.pos.x, P.pos.y + 0.05, P.pos.z); W.ring.scale.setScalar(0.6); W.ring.visible = true; W.ringLife = 0.3; }
+  function canStand() {
+    for (const s of W.solids) {
+      if (!s.active) continue; const b = s.b;
+      if (!overXZ(b)) continue;
+      if (b.minY < P.pos.y + H && b.maxY > P.pos.y + HS) return false;
+    }
+    return true;
+  }
 
   function buildGoal(x, y, z, kind, r, facing) {
     const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = facing; W.scene.add(g);
@@ -629,6 +688,7 @@ export function createEngine(canvas, hooks = {}) {
     const cp = W.checkpoint;
     P.pos.copy(cp.spawn); P.vel.set(0, 0, 0); P.stun = 0; P.ground = null; P.grounded = false; P.hitCd = 0; P.tumble = 0;
     P.dead = false; P.done = false; P.lastSafe.copy(cp.spawn); P.coyote = 0; P.buffer = 0;
+    P.h = H; P.jumps = 0; P.canDash = true; P.dashT = 0; P.slideT = 0; P.dashCd = 0; P.dashBuf = 0; P.noCut = false; P.bouncing = false; P.flip = 0; P.hitstop = 0;
     const yaw = cp.yaw ?? W.def.yaw ?? 0;
     P.face = yaw; player.rotation.y = yaw; player.visible = true;
     cam.yaw = yaw; cam.pitch = 0.38; cam.curDist = cam.dist;
@@ -641,6 +701,7 @@ export function createEngine(canvas, hooks = {}) {
   }
   function resetStage() {
     W.bonfires.forEach(b => setLit(b, b.start));
+    W.lanterns.forEach(l => setLanternLit(l, false));
     W.checkpoint = W.bonfires.find(b => b.start) || W.bonfires[0];
     W.orbs.forEach(o => { o.taken = false; o.m.visible = true; });
     if (W.goal && W.goal.flame) W.goal.flame.material.opacity = 0;
@@ -649,8 +710,9 @@ export function createEngine(canvas, hooks = {}) {
 
   function die(cause) {
     if (P.dead || P.done) return;
-    P.dead = true;
-    if (cause !== 'fall') player.visible = false;
+    P.dead = true; P.dashT = 0; P.slideT = 0;
+    shake(cause === 'fall' ? 0.25 : 0.6);
+    if (cause !== 'fall') { player.visible = false; puff(P.pos.x, P.pos.y + 0.5, P.pos.z, 10, 1.4, 3); }
     W.stain.visible = false; W.stainSouls = 0;
     if (W.souls > 0) { W.stain.position.copy(P.lastSafe); W.stain.visible = true; W.stainSouls = W.souls; W.souls = 0; }
     emit('death', cause);
@@ -686,7 +748,10 @@ export function createEngine(canvas, hooks = {}) {
       else if (ph < 0.6) { state = 'slam'; y = upY + (downY - upY) * ((ph - 0.45) / 0.15); }
       else if (ph < 1.2) { state = 'down'; y = downY; }
       else if (ph < 2.2) { state = 'rise'; const k = (ph - 1.2) / 1.0; y = downY + (upY - downY) * (k * k * (3 - 2 * k)); }
-      if (state === 'down' && c.state === 'slam') emit('sound', 'slam');
+      if (state === 'down' && c.state === 'slam') {
+        const d = Math.hypot(P.pos.x - s.home.x, P.pos.z - s.home.z);
+        if (d < 22) { emit('sound', 'slam'); shake(0.4 * (1 - d / 22)); }
+      }
       c.state = state;
       s.mesh.position.set(s.home.x + jx, y, s.home.z);
       s.delta.set(0, y - oy, 0);
@@ -694,7 +759,7 @@ export function createEngine(canvas, hooks = {}) {
       if (!P.dead && !P.done && (state === 'slam' || state === 'down')) {
         const b = s.b;
         if (P.pos.x + R - 0.15 > b.minX && P.pos.x - R + 0.15 < b.maxX && P.pos.z + R - 0.15 > b.minZ && P.pos.z - R + 0.15 < b.maxZ
-          && P.pos.y < b.minY + 0.05 && P.pos.y + H > b.minY) die('crushed');
+          && P.pos.y < b.minY + 0.05 && P.pos.y + P.h > b.minY) die('crushed');
       }
     }
 
@@ -747,7 +812,10 @@ export function createEngine(canvas, hooks = {}) {
         v.outer.visible = v.inner.visible = v.active;
         if (v.active) v.outer.rotation.y = Math.random() * 6;
         if (v.light) v.light.intensity = v.active ? 80 : wk * 6;
-        if (v.active && !wasActive) { W.flash = Math.max(W.flash, 0.6); emit('sound', 'thunder'); }
+        if (v.active && !wasActive) {
+          W.flash = Math.max(W.flash, 0.6); emit('sound', 'thunder');
+          const d = Math.hypot(P.pos.x - v.x, P.pos.z - v.z); if (d < 16) shake(0.3 * (1 - d / 16));
+        }
       }
     }
 
@@ -871,19 +939,83 @@ export function createEngine(canvas, hooks = {}) {
     const fx = -Math.sin(cam.yaw), fz = -Math.cos(cam.yaw), rx = Math.cos(cam.yaw), rz = -Math.sin(cam.yaw);
     const wx = fx * iz + rx * ix, wz = fz * iz + rz * ix;
 
-    P.stun = Math.max(0, P.stun - dt); P.hitCd = Math.max(0, P.hitCd - dt);
+    P.stun = Math.max(0, P.stun - dt); P.hitCd = Math.max(0, P.hitCd - dt); P.dashCd = Math.max(0, P.dashCd - dt);
     const stunned = P.stun > 0;
-    const tvx = stunned ? 0 : wx * MOVE, tvz = stunned ? 0 : wz * MOVE;
-    const accel = P.grounded ? (stunned ? 7 : 55) : (len > 0.05 && !stunned ? 20 : 1.5);
-    const dvx = tvx - P.vel.x, dvz = tvz - P.vel.z, dl = Math.hypot(dvx, dvz), mx = accel * dt;
-    if (dl > mx) { P.vel.x += dvx / dl * mx; P.vel.z += dvz / dl * mx; } else { P.vel.x = tvx; P.vel.z = tvz; }
-    if (len > 0.1 && !stunned) P.face = Math.atan2(-wx, -wz);
+    if (P.grounded) { P.jumps = 0; P.canDash = true; }
+    else if (P.jumps === 0 && P.coyote <= 0) P.jumps = 1;   // walked off a ledge: one air jump left
 
-    if (inp.jumpPressed) P.buffer = 0.15;
+    // ---- dash (air) / slide (ground)
+    if (inp.dashPressed) P.dashBuf = 0.12;
+    P.dashBuf -= dt;
+    if (P.dashBuf > 0 && P.dashCd <= 0 && !stunned && P.dashT <= 0 && P.slideT <= 0) {
+      let dx = wx, dz = wz;
+      if (len < 0.2) { dx = -Math.sin(P.face); dz = -Math.cos(P.face); } else { const l = Math.hypot(dx, dz); dx /= l; dz /= l; }
+      if (P.grounded) {
+        P.slideT = SLIDET; P.slideDir.set(dx, 0, dz); P.vel.x = dx * SLIDE; P.vel.z = dz * SLIDE;
+        P.dashCd = DASHCD; P.dashBuf = 0; P.face = Math.atan2(-dx, -dz);
+        emit('sound', 'slide'); puff(P.pos.x, P.pos.y, P.pos.z, 4, 0.6, 0.6);
+      } else if (P.canDash) {
+        P.dashT = DASHT; P.canDash = false; P.vel.x = dx * DASH; P.vel.z = dz * DASH; P.vel.y = 0;
+        P.dashCd = DASHCD; P.dashBuf = 0; P.face = Math.atan2(-dx, -dz);
+        emit('sound', 'dash'); shake(0.1);
+      }
+    }
+
+    // ---- horizontal movement
+    if (P.dashT > 0) {
+      P.dashT -= dt;
+      if (P.dashT <= 0) {
+        const sp = Math.hypot(P.vel.x, P.vel.z), cap = MOVE * DASHEND;
+        if (sp > cap) { P.vel.x *= cap / sp; P.vel.z *= cap / sp; }
+      }
+    } else if (P.slideT > 0) {
+      P.slideT -= dt;
+      if (len > 0.1) {   // gentle steering
+        P.slideDir.x += (wx / len - P.slideDir.x) * Math.min(1, dt * 3);
+        P.slideDir.z += (wz / len - P.slideDir.z) * Math.min(1, dt * 3);
+        const l = Math.hypot(P.slideDir.x, P.slideDir.z) || 1; P.slideDir.x /= l; P.slideDir.z /= l;
+        P.face = Math.atan2(-P.slideDir.x, -P.slideDir.z);
+      }
+      const k = clamp(P.slideT / SLIDET, 0, 1), sp = MOVE + (SLIDE - MOVE) * k;
+      P.vel.x = P.slideDir.x * sp; P.vel.z = P.slideDir.z * sp;
+      if (!P.grounded && P.coyote <= 0) P.slideT = 0;            // slid off an edge: keep the speed
+      if (P.slideT <= 0 && P.grounded && !canStand()) P.slideT = 0.05;  // still under something low
+    } else if (P.grounded) {
+      const tvx = stunned ? 0 : wx * MOVE, tvz = stunned ? 0 : wz * MOVE;
+      const accel = stunned ? 7 : ACCEL;
+      const dvx = tvx - P.vel.x, dvz = tvz - P.vel.z, dl = Math.hypot(dvx, dvz), mx = accel * dt;
+      if (dl > mx) { P.vel.x += dvx / dl * mx; P.vel.z += dvz / dl * mx; } else { P.vel.x = tvx; P.vel.z = tvz; }
+    } else {
+      // air: steer freely, but extra speed from a slide jump only bleeds off slowly
+      const sp = Math.hypot(P.vel.x, P.vel.z);
+      const cap = Math.max(MOVE, sp - AIRDECAY * dt);
+      if (len > 0.05 && !stunned) {
+        const tvx = wx * cap, tvz = wz * cap;
+        const dvx = tvx - P.vel.x, dvz = tvz - P.vel.z, dl = Math.hypot(dvx, dvz), mx = AIR * dt;
+        if (dl > mx) { P.vel.x += dvx / dl * mx; P.vel.z += dvz / dl * mx; } else { P.vel.x = tvx; P.vel.z = tvz; }
+      } else {
+        const k = Math.max(0, 1 - 1.5 * dt); P.vel.x *= k; P.vel.z *= k;
+      }
+      const sp2 = Math.hypot(P.vel.x, P.vel.z);
+      if (sp2 > cap) { P.vel.x *= cap / sp2; P.vel.z *= cap / sp2; }
+    }
+    if (len > 0.1 && !stunned && P.dashT <= 0 && P.slideT <= 0) P.face = Math.atan2(-wx, -wz);
+
+    // ---- jumping: ground jump (slide jump keeps the slide speed), then one double jump
+    if (inp.jumpPressed) P.buffer = 0.13;
     P.buffer -= dt;
     P.coyote = P.grounded ? 0.12 : P.coyote - dt;
-    if (P.buffer > 0 && P.coyote > 0 && !stunned) {
-      P.vel.y = JUMP; P.buffer = 0; P.coyote = 0; P.grounded = false; P.ground = null; P.squash = -0.22; emit('sound', 'jump');
+    if (P.buffer > 0 && !stunned) {
+      if (P.coyote > 0 && (P.slideT <= 0 || canStand())) {
+        const longJump = P.slideT > 0;
+        P.vel.y = JUMP; P.jumps = 1; P.noCut = false; P.buffer = 0; P.coyote = 0; P.slideT = 0;
+        P.grounded = false; P.ground = null; P.squash = -0.22;
+        emit('sound', longJump ? 'longjump' : 'jump');
+        puff(P.pos.x, P.pos.y, P.pos.z, longJump ? 5 : 3, 0.7, 0.8);
+      } else if (!P.grounded && P.coyote <= 0 && P.jumps < 2 && P.dashT <= 0) {
+        P.vel.y = JUMP2; P.jumps = 2; P.noCut = true; P.buffer = 0; P.squash = -0.25; P.flip = 1;
+        emit('sound', 'jump2'); ringBurst();
+      }
     }
     P.holding = !!inp.jumpHeld;
   }
@@ -892,23 +1024,31 @@ export function createEngine(canvas, hooks = {}) {
     for (const s of W.solids) {
       if (!s.active) continue; const b = s.b;
       if (!overXZ(b)) continue;
-      if (P.pos.y >= b.maxY - 0.001 || P.pos.y + H <= b.minY + 0.001) continue;
+      if (P.pos.y >= b.maxY - 0.001 || P.pos.y + P.h <= b.minY + 0.001) continue;
       if (b.maxY - P.pos.y <= STEP && (P.grounded || P.coyote > 0)) { P.pos.y = b.maxY; continue; }
+      // push out along whichever axis needs the smaller correction
+      const ax = (P.pos.x + R) - b.minX, cx = b.maxX - (P.pos.x - R);
+      const az = (P.pos.z + R) - b.minZ, cz = b.maxZ - (P.pos.z - R);
+      const ox = Math.min(ax, cx), oz = Math.min(az, cz);
       if (axis === 'x') {
-        const a = (P.pos.x + R) - b.minX, c = b.maxX - (P.pos.x - R);
-        if (a < c) { P.pos.x -= a; if (P.vel.x > 0) P.vel.x = 0; } else { P.pos.x += c; if (P.vel.x < 0) P.vel.x = 0; }
+        if (ox > oz) continue;
+        if (ax < cx) { P.pos.x -= ax; if (P.vel.x > 0) P.vel.x = 0; } else { P.pos.x += cx; if (P.vel.x < 0) P.vel.x = 0; }
       } else {
-        const a = (P.pos.z + R) - b.minZ, c = b.maxZ - (P.pos.z - R);
-        if (a < c) { P.pos.z -= a; if (P.vel.z > 0) P.vel.z = 0; } else { P.pos.z += c; if (P.vel.z < 0) P.vel.z = 0; }
+        if (oz > ox) continue;
+        if (az < cz) { P.pos.z -= az; if (P.vel.z > 0) P.vel.z = 0; } else { P.pos.z += cz; if (P.vel.z < 0) P.vel.z = 0; }
       }
     }
   }
 
   function physics(dt) {
     const prevY = P.pos.y, wasGrounded = P.grounded;
-    if (P.vel.y <= 0) P.bouncing = false;
-    const g = (P.vel.y > 0 && !P.holding && !P.bouncing) ? GRAV * 2.0 : GRAV;
-    P.vel.y = Math.max(P.vel.y + g * dt, -34);
+    P.h = P.slideT > 0 ? HS : H;
+    if (P.vel.y <= 0) { P.bouncing = false; P.noCut = false; }
+    if (P.dashT > 0) P.vel.y = 0;
+    else {
+      const g = (P.vel.y > 0 && !P.holding && !P.bouncing && !P.noCut) ? GRAV * CUT : GRAV;
+      P.vel.y = Math.max(P.vel.y + g * dt, -36);
+    }
     P.pos.x += P.vel.x * dt; resolve('x');
     P.pos.z += P.vel.z * dt; resolve('z');
     if (P.vel.y < 0) P.fallV = P.vel.y;
@@ -920,19 +1060,24 @@ export function createEngine(canvas, hooks = {}) {
       if (!overXZ(b)) continue;
       if (P.vel.y <= 0 && prevY >= b.maxY - 0.06 - Math.max(0, s.delta.y) && P.pos.y < b.maxY) {
         if (b.maxY > landY) { landY = b.maxY; landS = s; }
-      } else if (P.vel.y > 0 && prevY + H <= b.minY + 0.05 && P.pos.y + H > b.minY) {
-        P.pos.y = b.minY - H; P.vel.y = 0;
+      } else if (P.vel.y > 0 && prevY + P.h <= b.minY + 0.05 && P.pos.y + P.h > b.minY) {
+        P.pos.y = b.minY - P.h; P.vel.y = 0;
       }
     }
     if (landS) {
       P.pos.y = landY; P.vel.y = 0;
       if (landS.bounce) {
-        P.vel.y = landS.bounce; P.bouncing = true; P.squash = -0.3; P.coyote = 0; emit('sound', 'bounce');
+        P.vel.y = landS.bounce; P.bouncing = true; P.squash = -0.3; P.coyote = 0; P.jumps = 1; P.canDash = true;
+        emit('sound', 'bounce'); puff(P.pos.x, P.pos.y, P.pos.z, 4, 0.8, 1);
         if (landS.pad) landS.pad.scale.y = 0.4;
         return;
       }
       P.grounded = true; P.ground = landS;
-      if (!wasGrounded) { if (P.fallV < -9) { emit('sound', 'land'); P.squash = clamp(-P.fallV * 0.02, 0.1, 0.35); } P.fallV = 0; }
+      if (!wasGrounded) {
+        if (P.fallV < -8) { emit('sound', 'land'); P.squash = clamp(-P.fallV * 0.018, 0.1, 0.35); puff(P.pos.x, P.pos.y, P.pos.z, P.fallV < -18 ? 7 : 4, 0.8, 0.5); }
+        if (P.fallV < -22) shake(0.18);
+        P.fallV = 0; P.flip = 0;
+      }
       if (landS.safe && P.stun <= 0) P.lastSafe.copy(P.pos);
     }
   }
@@ -941,19 +1086,21 @@ export function createEngine(canvas, hooks = {}) {
     if (P.hitCd > 0) return;
     const l = Math.hypot(dx, dz) || 1;
     P.vel.x = dx / l * speed; P.vel.z = dz / l * speed; P.vel.y = up;
-    P.stun = 0.75; P.hitCd = 0.5; P.grounded = false; P.ground = null; P.coyote = 0;
+    P.stun = 0.7; P.hitCd = 0.5; P.grounded = false; P.ground = null; P.coyote = 0;
+    P.dashT = 0; P.slideT = 0; P.h = H; P.jumps = 2; P.flip = 0;
+    P.hitstop = 0.07; shake(0.35);
     emit('sound', 'hit');
   }
 
   function hazards() {
-    const cx = P.pos.x, cy = P.pos.y + 0.8, cz = P.pos.z;
+    const cx = P.pos.x, cy = P.pos.y + P.h / 2, cz = P.pos.z;
     for (const s of W.spinners) {
       for (let k = 0; k < s.arms; k++) {
         const a = s.a + k * Math.PI / 2, dx = Math.cos(a), dz = Math.sin(a);
         const px = cx - s.c.x, pz = cz - s.c.z;
         const tt = clamp(px * dx + pz * dz, -s.r, s.r);
         const ex = px - tt * dx, ez = pz - tt * dz;
-        if (Math.hypot(ex, ez) < R + 0.22 && P.pos.y < s.c.y + 0.18 && P.pos.y + H > s.c.y - 0.18) {
+        if (Math.hypot(ex, ez) < R + 0.22 && P.pos.y < s.c.y + 0.18 && P.pos.y + P.h > s.c.y - 0.18) {
           const sg = (Math.sign(tt) || 1) * Math.sign(s.w);
           knock(-Math.sin(a) * sg + ex * 0.6, Math.cos(a) * sg + ez * 0.6, 12, 7);
         }
@@ -971,7 +1118,8 @@ export function createEngine(canvas, hooks = {}) {
     }
     for (const pr of W.projectiles) {
       const m = pr.m.position;
-      const dy = m.y < P.pos.y + 0.3 ? P.pos.y + 0.3 - m.y : m.y > P.pos.y + 1.4 ? m.y - P.pos.y - 1.4 : 0;
+      const top = P.pos.y + P.h - 0.2;
+      const dy = m.y < P.pos.y + 0.2 ? P.pos.y + 0.2 - m.y : m.y > top ? m.y - top : 0;
       if (Math.hypot(cx - m.x, cz - m.z) < R + 0.15 && dy < 0.25) { knock(pr.dir.x, pr.dir.z, 10, 5.5); pr.left = 0; }
     }
     for (const v of W.vents) {
@@ -983,11 +1131,12 @@ export function createEngine(canvas, hooks = {}) {
     if (P.pos.y < W.killY) die('fall');
   }
 
+  function claim(cp) { if (!W.checkpoint || cp.order >= W.checkpoint.order) W.checkpoint = cp; }
   function pickups() {
     const cx = P.pos.x, cy = P.pos.y + 0.8, cz = P.pos.z;
     for (const o of W.orbs) {
       if (o.taken) continue;
-      if (Math.hypot(cx - o.m.position.x, cy - o.m.position.y, cz - o.m.position.z) < 1.0) { o.taken = true; o.m.visible = false; W.souls += 100; emit('soul', W.souls); }
+      if (Math.hypot(cx - o.m.position.x, cy - o.m.position.y, cz - o.m.position.z) < 1.1) { o.taken = true; o.m.visible = false; W.souls += 100; emit('soul', W.souls); }
     }
     if (W.stain.visible && Math.hypot(cx - W.stain.position.x, P.pos.y - W.stain.position.y, cz - W.stain.position.z) < 1.3) {
       W.souls += W.stainSouls; W.stainSouls = 0; W.stain.visible = false; emit('retrieved', W.souls);
@@ -995,7 +1144,13 @@ export function createEngine(canvas, hooks = {}) {
     for (const b of W.bonfires) {
       if (Math.hypot(cx - b.pos.x, P.pos.y - b.pos.y, cz - b.pos.z) < 1.8) {
         if (!b.lit) { setLit(b, true); emit('bonfire', true); }
-        W.checkpoint = b;
+        claim(b);
+      }
+    }
+    for (const l of W.lanterns) {
+      if (Math.hypot(cx - l.pos.x, cz - l.pos.z) < 2.2 && Math.abs(P.pos.y - l.pos.y) < 2.5) {
+        if (!l.lit) { setLanternLit(l, true); emit('lantern'); }
+        claim(l);
       }
     }
     const g = W.goal;
@@ -1013,10 +1168,11 @@ export function createEngine(canvas, hooks = {}) {
       const b = W.bounds, a = time * 0.06, cz = (b.minZ + b.maxZ) / 2;
       camera.position.set(Math.sin(a) * 10, (b.maxY + b.minY) / 2 + 16, b.maxZ + 14);
       camera.lookAt(0, (b.maxY + b.minY) / 2 + 2, cz);
+      if (camera.fov !== 62) { camera.fov = 62; camera.updateProjectionMatrix(); }
       return;
     }
     if (inp) { cam.yaw -= inp.lookX; cam.pitch = clamp(cam.pitch + inp.lookY, 0.05, 1.3); }
-    if (!P.dead) camLook.lerp(tmp.set(P.pos.x, P.pos.y + 1.3, P.pos.z), 1 - Math.exp(-12 * dt));
+    if (!P.dead) camLook.lerp(tmp.set(P.pos.x, P.pos.y + 1.3, P.pos.z), 1 - Math.exp(-16 * dt));
     tmp2.set(Math.sin(cam.yaw) * Math.cos(cam.pitch), Math.sin(cam.pitch), Math.cos(cam.yaw) * Math.cos(cam.pitch));
     let want = cam.dist;
     ray.set(camLook, tmp2); ray.far = cam.dist;
@@ -1025,26 +1181,52 @@ export function createEngine(canvas, hooks = {}) {
     cam.curDist += (want - cam.curDist) * Math.min(1, dt * (want < cam.curDist ? 25 : 4));
     camera.position.copy(camLook).addScaledVector(tmp2, cam.curDist);
     camera.lookAt(camLook);
+    // speed kick on the field of view, and screen shake
+    const sp = Math.hypot(P.vel.x, P.vel.z);
+    const fovWant = 62 + clamp((sp - MOVE) / (DASH - MOVE), 0, 1) * 12 + (P.dashT > 0 ? 4 : 0) + clamp((-P.vel.y - 20) / 16, 0, 1) * 6;
+    cam.fov += (fovWant - cam.fov) * Math.min(1, dt * (fovWant > cam.fov ? 14 : 4));
+    if (Math.abs(camera.fov - cam.fov) > 0.05) { camera.fov = cam.fov; camera.updateProjectionMatrix(); }
+    if (cam.shake > 0.001) {
+      const s = cam.shake * cam.shake * 0.45;
+      camera.position.x += (Math.random() - 0.5) * s; camera.position.y += (Math.random() - 0.5) * s; camera.position.z += (Math.random() - 0.5) * s;
+      cam.shake = Math.max(0, cam.shake - dt * 2.2);
+    }
   }
 
   /* ---------- animation + fx */
   function animatePlayer(dt) {
     player.position.copy(P.pos);
-    player.rotation.y += wrapAngle(P.face - player.rotation.y) * Math.min(1, dt * 14);
+    player.rotation.y += wrapAngle(P.face - player.rotation.y) * Math.min(1, dt * 18);
     const sp = Math.hypot(P.vel.x, P.vel.z);
-    P.walk += sp * dt * 2.3;
-    const stride = P.grounded ? Math.sin(P.walk) * 0.9 * Math.min(1, sp / 4) : 0.5;
+    P.walk += sp * dt * 2.1;
+    const stride = P.grounded ? Math.sin(P.walk) * 0.95 * Math.min(1, sp / 4) : 0.5;
     legL.rotation.x = stride; legR.rotation.x = P.grounded ? -stride : -0.3;
     P.squash += (0 - P.squash) * Math.min(1, dt * 10);
     body.scale.set(1 + P.squash * 0.5, 1 - P.squash, 1 + P.squash * 0.5);
     if (P.stun > 0) { P.tumble += dt * 13; body.rotation.x = P.tumble; body.position.y = 0.6; }
-    else { P.tumble = 0; body.position.y = 0; const lean = -Math.min(0.28, sp * 0.035); body.rotation.x += (lean - body.rotation.x) * Math.min(1, dt * 10); }
-    body.rotation.z = Math.sin(time * 9) * 0.06 * Math.min(1, sp / 4);
-    cape.rotation.x = 0.15 + Math.min(0.9, sp * 0.07 + Math.max(0, P.vel.y) * 0.04) + Math.sin(time * 11) * 0.05;
+    else if (P.slideT > 0) { P.tumble = 0; body.position.y = 0.1; body.rotation.x += (1.15 - body.rotation.x) * Math.min(1, dt * 25); legL.rotation.x = legR.rotation.x = -1.3; }
+    else if (P.dashT > 0) { P.tumble = 0; body.position.y = 0.3; body.rotation.x += (-1.0 - body.rotation.x) * Math.min(1, dt * 30); legL.rotation.x = legR.rotation.x = 0.6; }
+    else if (P.flip > 0) {
+      // double-jump front flip
+      P.flip = Math.max(0, P.flip - dt / 0.36);
+      const th = -(1 - P.flip) * Math.PI * 2;
+      body.rotation.x = P.flip === 0 ? 0 : th;
+      body.position.set(0, 0.8 - 0.8 * Math.cos(th), -0.8 * Math.sin(th));
+    } else {
+      P.tumble = 0; body.position.y += (0 - body.position.y) * Math.min(1, dt * 20);
+      const lean = -Math.min(0.32, sp * 0.032);
+      body.rotation.x += (lean - body.rotation.x) * Math.min(1, dt * 12);
+    }
+    if (P.flip <= 0) body.position.z = 0;
+    body.rotation.z = Math.sin(time * 10) * 0.06 * Math.min(1, sp / 4);
+    cape.rotation.x = 0.15 + Math.min(1.2, sp * 0.07 + Math.max(0, P.vel.y) * 0.04) + Math.sin(time * 13) * 0.06;
     W.torch.position.set(P.pos.x, P.pos.y + 2.4, P.pos.z + 0.6);
     const sd = W.theme.sunDir;
     W.sun.position.set(P.pos.x + sd[0] * 40, P.pos.y + sd[1] * 40, P.pos.z + sd[2] * 40);
     W.sun.target.position.copy(P.pos);
+    // afterimages while dashing or sliding
+    P.trailT -= dt;
+    if ((P.dashT > 0 || P.slideT > 0 || Math.hypot(P.vel.x, P.vel.z) > MOVE * 1.25) && P.trailT <= 0 && !P.dead) { ghost(); P.trailT = 0.03; }
   }
 
   function updateFx(dt) {
@@ -1052,11 +1234,30 @@ export function createEngine(canvas, hooks = {}) {
       const f = 0.85 + Math.sin(time * 13 + b.pos.x) * 0.08 + Math.random() * 0.1;
       b.flame.scale.set(1, f, 1); b.core.scale.set(1, f * 1.1, 1); b.light.intensity = 36 * f;
     }
+    for (const l of W.lanterns) if (l.lit) { const f = 0.9 + Math.sin(time * 9 + l.pos.z) * 0.1; l.halo.scale.setScalar(f); }
     W.orbs.forEach((o, i) => { if (!o.taken) { o.m.position.y = o.home.y + Math.sin(time * 2 + i) * 0.12; o.m.rotation.y += dt; } });
     W.stainOrb.position.y = 0.6 + Math.sin(time * 2.5) * 0.08;
     W.notes.forEach((n, i) => n.m.material.opacity = 0.6 + Math.sin(time * 2 + i) * 0.25);
     if (W.goal) W.goal.fogMats.forEach((m, i) => m.opacity = 0.26 + Math.sin(time * 1.3 + i) * 0.07);
     for (const s of W.solids) if (s.pad) s.pad.scale.y += (1 - s.pad.scale.y) * Math.min(1, dt * 8);
+
+    for (const d of W.dust) {
+      if (d.life <= 0) continue;
+      d.life -= dt; const k = Math.max(0, d.life / d.max);
+      d.m.position.addScaledVector(d.v, dt); d.v.multiplyScalar(Math.max(0, 1 - 4 * dt));
+      d.m.scale.setScalar(0.6 + (1 - k) * 1.4); d.m.material.opacity = 0.45 * k;
+      if (d.life <= 0) d.m.visible = false;
+    }
+    for (const g of W.ghosts) {
+      if (g.life <= 0) continue;
+      g.life -= dt; g.m.material.opacity = Math.max(0, g.life / 0.22) * 0.35;
+      if (g.life <= 0) g.m.visible = false;
+    }
+    if (W.ringLife > 0) {
+      W.ringLife -= dt; const k = Math.max(0, W.ringLife / 0.3);
+      W.ring.scale.setScalar(0.6 + (1 - k) * 2.4); W.ring.material.opacity = 0.8 * k;
+      if (W.ringLife <= 0) W.ring.visible = false;
+    }
 
     // ambient particles follow the camera
     const pa = W.particles, cfg = pa.cfg, pos = pa.pos, [sx, sy, sz] = cfg.spread;
@@ -1075,7 +1276,7 @@ export function createEngine(canvas, hooks = {}) {
     // storm lightning flashes
     if (W.theme.storm) {
       W.nextFlash -= dt;
-      if (W.nextFlash <= 0) { W.flash = 1; W.nextFlash = 6 + Math.random() * 9; emit('sound', 'thunder'); }
+      if (W.nextFlash <= 0) { W.flash = 1; W.nextFlash = 6 + Math.random() * 9; emit('sound', 'thunder'); shake(0.12); }
     }
     W.flash = Math.max(0, W.flash - dt * 3);
     W.hemi.intensity = W.theme.hemiI * (1 + W.flash * (Math.random() < 0.5 ? 2.5 : 1.2));
@@ -1090,21 +1291,29 @@ export function createEngine(canvas, hooks = {}) {
     get souls() { return W ? W.souls : 0; },
     get totalSouls() { return W ? W.orbs.length * 100 : 0; },
     get bonfireCount() { return W ? [W.bonfires.filter(b => b.lit).length, W.bonfires.length] : [0, 0]; },
+    // 0..1: how fast the player is moving beyond a normal run (drives the speed-line overlay)
+    get speedFx() {
+      if (!W || cinematic || P.dead) return 0;
+      const sp = Math.hypot(P.vel.x, P.vel.z);
+      return Math.max(clamp((sp - MOVE * 1.05) / (DASH - MOVE), 0, 1), clamp((-P.vel.y - 22) / 14, 0, 1) * 0.7);
+    },
     setCinematic(v) { cinematic = v; },
     respawn: () => respawn(false),
     resetStage,
     step(dt, inp) {
       if (!W) return;
-      time += dt;
-      updateWorld(dt);
+      if (P.hitstop > 0) { P.hitstop -= dt; updateCamera(dt, cinematic ? null : inp); return; }
+      const wdt = dt * W.tempo;      // hazards run on the stage's tempo
+      time += wdt;
+      updateWorld(wdt);
       if (!cinematic) {
         if (!P.dead && !P.done) {
           control(dt, inp);
-          for (let i = 0; i < 2; i++) physics(dt / 2);
+          for (let i = 0; i < 3; i++) physics(dt / 3);
           hazards();
           if (!P.dead) pickups();
         } else if (P.dead) {
-          if (P.pos.y > W.killY - 30) { P.vel.y = Math.max(P.vel.y + GRAV * dt, -34); P.pos.addScaledVector(P.vel, dt); }
+          if (P.pos.y > W.killY - 30) { P.vel.y = Math.max(P.vel.y + GRAV * dt, -36); P.pos.addScaledVector(P.vel, dt); }
         } else if (P.done) {
           P.vel.set(0, 0, 0);
         }

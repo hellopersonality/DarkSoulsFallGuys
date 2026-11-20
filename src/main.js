@@ -2,7 +2,7 @@
 import { createEngine } from './engine.js';
 import { STAGES, BIOMES } from './stages.js';
 
-export const BUILD = '0.2.0';
+export const BUILD = '0.3.0';
 const $ = id => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const fmt = t => { const m = Math.floor(t / 60), s = t - m * 60; return String(m).padStart(2, '0') + ':' + s.toFixed(2).padStart(5, '0'); };
@@ -41,7 +41,12 @@ function noise(dur, vol = 0.2, freq = 800, q = 0.7, type = 'lowpass') {
   src.connect(f).connect(g).connect(actx.destination); src.start(t); src.stop(t + dur + 0.05);
 }
 const sfx = {
-  jump: () => tone(220, 0.14, 'triangle', 0.1, 2),
+  jump: () => tone(220, 0.12, 'triangle', 0.1, 2.2),
+  jump2: () => { tone(330, 0.16, 'triangle', 0.09, 2); noise(0.12, 0.05, 1800, 1, 'bandpass'); },
+  longjump: () => { tone(180, 0.2, 'triangle', 0.1, 2.6); noise(0.2, 0.06, 900); },
+  dash: () => { noise(0.22, 0.14, 1400, 0.8, 'bandpass'); tone(420, 0.12, 'sawtooth', 0.04, 0.6); },
+  slide: () => noise(0.4, 0.1, 700, 0.6),
+  lantern: () => { tone(523, 0.5, 'triangle', 0.07, 1.2); tone(784, 0.6, 'sine', 0.05, 0, 0.08); },
   land: () => { tone(95, 0.12, 'sine', 0.18, 0.5); noise(0.08, 0.06, 400); },
   soul: () => { tone(880, 0.25, 'sine', 0.08, 1.5); tone(1320, 0.3, 'sine', 0.06, 0, 0.07); },
   hit: () => { tone(150, 0.28, 'sawtooth', 0.1, 0.4); noise(0.15, 0.12, 1200); },
@@ -68,6 +73,7 @@ try {
     death: onDeath,
     goal: onGoal,
     bonfire: (isNew) => { if (isNew) { sfx.bonfire(); banner('BONFIRE LIT', 'lit', 2.2); } },
+    lantern: () => { sfx.lantern(); toast('Lantern lit'); },
     soul: () => { sfx.soul(); pulseSouls(); },
     retrieved: () => { sfx.soul(); pulseSouls(); banner('SOULS RETRIEVED', 'lit', 1.6); },
     note: showNote,
@@ -87,7 +93,7 @@ engine.load(STAGES[0]); engine.setCinematic(true);
 
 /* ---------------- input ---------------- */
 const keys = new Set();
-let jumpQueued = false, lastDevice = 'kb', lookAccX = 0, lookAccY = 0, dragging = false, hadLock = false;
+let jumpQueued = false, dashQueued = false, lastDevice = 'kb', lookAccX = 0, lookAccY = 0, dragging = false, hadLock = false;
 addEventListener('keydown', e => {
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) && mode === 'play') e.preventDefault();
   if (e.code === 'Escape' || e.code === 'KeyP') {
@@ -97,6 +103,7 @@ addEventListener('keydown', e => {
   if (e.repeat) return;
   keys.add(e.code); lastDevice = 'kb';
   if (e.code === 'Space' && mode === 'play') jumpQueued = true;
+  if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyK') && mode === 'play') dashQueued = true;
   if (e.code === 'KeyR' && mode === 'play') restartStage();
 });
 addEventListener('keyup', e => keys.delete(e.code));
@@ -119,19 +126,20 @@ document.addEventListener('pointerlockchange', () => {
   hadLock = locked;
 });
 
-const pad = { a: false, b: false, y: false, start: false, nav: 0, navT: 0 };
+const pad = { a: false, b: false, x: false, y: false, rb: false, start: false, nav: 0, navT: 0 };
 function readPad(dt) {
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
   let gp = null; for (const p of pads) if (p && p.connected) { gp = p; break; }
   if (!gp) return null;
   const dz = v => Math.abs(v) < 0.18 ? 0 : (v - Math.sign(v) * 0.18) / 0.82;
   const btn = i => !!(gp.buttons[i] && gp.buttons[i].pressed);
-  const r = { lx: dz(gp.axes[0] || 0), ly: dz(gp.axes[1] || 0), rx: dz(gp.axes[2] || 0), ry: dz(gp.axes[3] || 0), a: btn(0), b: btn(1), y: btn(3), start: btn(9),
+  const r = { lx: dz(gp.axes[0] || 0), ly: dz(gp.axes[1] || 0), rx: dz(gp.axes[2] || 0), ry: dz(gp.axes[3] || 0), a: btn(0), b: btn(1), x: btn(2), y: btn(3), rb: btn(5), start: btn(9),
     up: btn(12), down: btn(13), left: btn(14), right: btn(15) };
   const pressed = k => r[k] && !pad[k];
   if (r.lx || r.ly || r.rx || r.ry || r.a || r.start) lastDevice = 'pad';
   if (mode === 'play') {
     if (pressed('a')) jumpQueued = true;
+    if (pressed('x') || pressed('b') || pressed('rb')) dashQueued = true;
     if (pressed('start')) pause();
   } else {
     // menu navigation with stick / d-pad
@@ -144,7 +152,7 @@ function readPad(dt) {
     if (pressed('start')) { if (mode === 'paused') resume(); else if (mode === 'title') $('beginBtn').click(); }
     if (pressed('y')) setOpt('invPad', !save.opts.invPad);
   }
-  pad.a = r.a; pad.b = r.b; pad.y = r.y; pad.start = r.start;
+  pad.a = r.a; pad.b = r.b; pad.x = r.x; pad.y = r.y; pad.rb = r.rb; pad.start = r.start;
   return r;
 }
 function visibleOverlay() { return [...document.querySelectorAll('.overlay')].find(o => !o.hidden); }
@@ -211,7 +219,7 @@ function startStage(i) {
   initAudio();
   stageIdx = i; const st = STAGES[i];
   engine.load(st); engine.setCinematic(false);
-  runTime = 0; deaths = 0; jumpQueued = false; lookAccX = lookAccY = 0;
+  runTime = 0; deaths = 0; jumpQueued = dashQueued = false; lookAccX = lookAccY = 0;
   mode = 'play'; show(null); $('hud').hidden = false; hideBanner();
   const biome = BIOMES.find(b => b.id === st.biome);
   $('eyebrow').textContent = `${biome.name} · ${st.id}`;
@@ -224,7 +232,8 @@ function restartStage() { engine.resetStage(); runTime = 0; deaths = 0; mode = '
 function pause() { if (mode !== 'play') return; mode = 'paused'; show('pauseScreen'); keys.clear(); exitLock(); $('resumeBtn').focus(); }
 function resume() { if (mode !== 'paused') return; mode = 'play'; show(null); jumpQueued = false; lockPointer(); canvas.focus(); }
 
-function onDeath() { mode = 'dead'; deadTimer = 2.8; deaths++; sfx.death(); banner('YOU DIED', 'died', 2.6); }
+// quick respawn keeps the pace up; the bloodstain still costs you if you die again
+function onDeath() { mode = 'dead'; deadTimer = 1.25; deaths++; sfx.death(); banner('YOU DIED', 'died', 1.2); }
 function onGoal() {
   mode = 'clear'; sfx.win(); exitLock();
   const st = STAGES[stageIdx], total = st.parts.flat(3).filter(p => p.t === 'soul').length, souls = Math.round(engine.souls / 100);
@@ -275,6 +284,9 @@ function banner(text, cls, dur) {
   el.hidden = true; void el.offsetWidth; el.hidden = false; bannerTimer = dur;
 }
 function hideBanner() { $('banner').hidden = true; bannerTimer = 0; }
+let toastTimer = 0;
+function toast(text) { const el = $('toast'); el.textContent = text; el.hidden = true; void el.offsetWidth; el.hidden = false; toastTimer = 1.6; }
+let speedLvl = 0;
 let noteText = null;
 function showNote(text) {
   if (text === noteText) return; noteText = text;
@@ -301,6 +313,7 @@ checkForUpdate();
 $('build').textContent = 'v' + BUILD;
 
 /* ---------------- loop ---------------- */
+const speedLines = $('speedLines');
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
@@ -319,9 +332,9 @@ function frame(now) {
       lookY += p.ry * 1.8 * dt * save.opts.sens * (save.opts.invPad ? -1 : 1);
     }
     const input = mode === 'play'
-      ? { mx: clamp(mx, -1, 1), mz: clamp(mz, -1, 1), lookX, lookY, jumpPressed: jumpQueued, jumpHeld: keys.has('Space') || !!(p && p.a) }
-      : { mx: 0, mz: 0, lookX: 0, lookY: 0, jumpPressed: false, jumpHeld: false };
-    jumpQueued = false;
+      ? { mx: clamp(mx, -1, 1), mz: clamp(mz, -1, 1), lookX, lookY, jumpPressed: jumpQueued, jumpHeld: keys.has('Space') || !!(p && p.a), dashPressed: dashQueued }
+      : { mx: 0, mz: 0, lookX: 0, lookY: 0, jumpPressed: false, jumpHeld: false, dashPressed: false };
+    jumpQueued = dashQueued = false;
     engine.step(dt, input);
     if (mode === 'play') runTime += dt;
     if (mode === 'dead') { deadTimer -= dt; if (deadTimer <= 0) { engine.respawn(); mode = 'play'; hideBanner(); } }
@@ -329,6 +342,10 @@ function frame(now) {
     engine.idle(dt);
   }
   if (bannerTimer > 0 && mode !== 'paused') { bannerTimer -= dt; if (bannerTimer <= 0) hideBanner(); }
+  if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) $('toast').hidden = true; }
+  const sw = mode === 'play' ? engine.speedFx : 0;
+  speedLvl += (sw - speedLvl) * Math.min(1, dt * (sw > speedLvl ? 18 : 6));
+  speedLines.style.opacity = speedLvl.toFixed(3);
   if (mode !== 'title' && mode !== 'select') updateHud();
   engine.render();
 }

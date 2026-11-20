@@ -11,6 +11,7 @@
 <body>
 <!--BODY-->
 <canvas id="c" tabindex="0" aria-label="Game view"></canvas>
+<div class="speed-lines" id="speedLines" aria-hidden="true"></div>
 
 <div class="hud" id="hud" hidden>
   <div class="hud-top">
@@ -29,35 +30,40 @@
     <div class="note" id="note" hidden></div>
     <div class="controls" id="ctlKb">
       <span class="ctl"><span class="cap">W</span><span class="cap">A</span><span class="cap">S</span><span class="cap">D</span> Move</span>
-      <span class="ctl"><span class="cap accent wide">Space</span> Jump</span>
+      <span class="ctl"><span class="cap accent wide">Space</span> Jump ×2</span>
+      <span class="ctl"><span class="cap wide">Shift</span> Dash / Slide</span>
       <span class="ctl"><span class="cap">Mouse</span> Look</span>
       <span class="ctl"><span class="cap">R</span> Restart</span>
     </div>
     <div class="controls" id="ctlPad" hidden>
       <span class="ctl"><span class="cap round">L</span> Move</span>
-      <span class="ctl"><span class="cap round accent">A</span> Jump</span>
+      <span class="ctl"><span class="cap round accent">A</span> Jump ×2</span>
+      <span class="ctl"><span class="cap round">X</span> Dash / Slide</span>
       <span class="ctl"><span class="cap round">R</span> Look</span>
     </div>
   </div>
 </div>
 
 <div class="banner" id="banner" hidden><span id="bannerText"></span></div>
+<div class="toast" id="toast" hidden role="status"></div>
 
 <section class="overlay" id="titleScreen">
   <div class="panel">
     <span class="eyebrow">A trial in nine parts</span>
     <h1>Ashen Gauntlet</h1>
-    <p class="lede">From the lanes of Emberwick, through the halls of Castle Duskmoor, to the beacon at the top of the spire. Nothing here will fight you. Everything here will try to throw you off.</p>
+    <p class="lede">From the lanes of Emberwick, through the halls of Castle Duskmoor, to the beacon at the top of the spire. Nothing here will fight you. Everything here will try to throw you off. Keep moving.</p>
     <button class="btn" id="beginBtn" type="button">Begin</button>
     <dl class="keys">
       <dt>Keyboard</dt>
       <div><span class="cap">WASD</span> Move</div>
-      <div><span class="cap">Space</span> Jump (hold for higher)</div>
+      <div><span class="cap">Space</span> Jump, again in the air to double jump</div>
+      <div><span class="cap">Shift</span> Dash in the air, slide on the ground</div>
       <div><span class="cap">Mouse</span> Look</div>
       <div><span class="cap">Esc</span> Pause · <span class="cap">R</span> Restart</div>
       <dt>Controller</dt>
       <div><span class="cap round">L</span> Move · <span class="cap round">R</span> Look</div>
-      <div><span class="cap round">A</span> Jump · Start pauses</div>
+      <div><span class="cap round">A</span> Jump · <span class="cap round">X</span> Dash / Slide</div>
+      <div>Start pauses</div>
     </dl>
     <fieldset class="opts"><legend>Camera</legend>
       <label class="opt"><input type="checkbox" id="invMouseT"> Invert Y axis (mouse)</label>
