@@ -91,6 +91,83 @@ function boxGeo(w, h, d) {
 }
 const glowMat = (color, opacity = 0.85) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false });
 
+/* ------------------------------------------------------------------ floors (what waits below) */
+// a/b/c are display colours (sRGB hex); `deadly` floors kill on contact, the rest just swallow you.
+export const FLOORS = {
+  water:  { a: 0x0e2a34, b: 0x1f5a66, c: 0xd2ecea, under: 0x5aa8b8, underI: 0.4, splash: 0xd8f0ff, deadly: true, sound: 'splash' },
+  lava:   { a: 0x2a0b05, b: 0xd8420c, c: 0xffd25a, under: 0xff6a20, underI: 1.7, splash: 0xffa040, deadly: true, sound: 'sizzle', fog: 0x2a120c },
+  goop:   { a: 0x08200d, b: 0x2c9a28, c: 0xc0ff6a, under: 0x7aff5a, underI: 1.0, splash: 0x9aff6a, deadly: true, sound: 'glop', fog: 0x0f1d12 },
+  pit:    { pit: true, fog: 0x07080b },
+  storm:  { a: 0x262d40, b: 0x7f8cab, c: 0xd8e6ff, under: 0x8a9ac8, underI: 0.5 },
+  vortex: { a: 0x1b1f33, b: 0x6c78a0, c: 0xffd2a0, under: 0xa0a8d0, underI: 0.6 },
+};
+const NOISE_GLSL = `
+  float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float noise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3.0-2.0*f);
+    return mix(mix(hash(i), hash(i+vec2(1.0,0.0)), u.x), mix(hash(i+vec2(0.0,1.0)), hash(i+vec2(1.0,1.0)), u.x), u.y); }
+  float fbm(vec2 p){ float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++){ v += a*noise(p); p *= 2.03; a *= 0.5; } return v; }`;
+const FLOOR_FRAG = {
+  water: `
+    vec2 p = vW.xz * 0.12; float t = uTime;
+    float n = fbm(p + vec2(t*0.05, t*0.03));
+    float n2 = fbm(p*2.3 - vec2(t*0.09, -t*0.05));
+    vec3 col = mix(uA, uB, smoothstep(0.3, 0.75, n*0.6 + n2*0.4));
+    col += uC * pow(smoothstep(0.6, 0.92, n2), 3.0) * 0.9;
+    vec3 V = normalize(cameraPosition - vW);
+    col = mix(col, uB*0.5 + uC*0.35, pow(1.0 - max(V.y, 0.0), 3.0) * 0.55);`,
+  lava: `
+    vec2 p = vW.xz * 0.08; float t = uTime * 0.15;
+    vec2 q = vec2(fbm(p + t), fbm(p - t + 3.1));
+    float n = fbm(p*1.5 + q*1.8 + vec2(0.0, t*0.6));
+    float crack = smoothstep(0.45, 0.33, n);
+    float core = smoothstep(0.35, 0.24, n);
+    vec3 col = uA * (0.6 + 0.9 * fbm(p*5.0 + q));
+    col = mix(col, uB * 1.25, crack);
+    col = mix(col, uC * 1.3, core);
+    col *= 0.85 + 0.15 * sin(uTime*2.0 + n*12.0);`,
+  goop: `
+    vec2 p = vW.xz * 0.1; float t = uTime * 0.2;
+    float n = fbm(p*1.2 + vec2(t, -t*0.7));
+    float n2 = fbm(p*3.0 - t*1.3);
+    vec3 col = mix(uA, uB, smoothstep(0.3, 0.8, n));
+    vec2 g = vW.xz * 0.16 + vec2(0.0, uTime*0.05); vec2 id = floor(g); vec2 f = fract(g) - 0.5 + (vec2(hash(id+1.7), hash(id+4.3)) - 0.5) * 0.4;
+    float h = hash(id); float ph = fract(uTime*0.45*(0.5+h) + h*7.0);
+    float ring = smoothstep(0.05, 0.0, abs(length(f) - ph*0.3)) * (1.0 - ph) * step(0.72, h);
+    float dome = smoothstep(0.3*ph, 0.0, length(f)) * step(0.72, h) * (1.0 - ph) * 0.6;
+    col += uC * (ring*1.4 + dome + pow(n2, 4.0)*1.4);`,
+  storm: `
+    vec2 p = vW.xz * 0.03; float t = uTime * 0.03;
+    float n = fbm(p + vec2(t, t*0.4)); float n2 = fbm(p*2.7 + vec2(-t*1.6, t));
+    vec3 col = mix(uA, uB, smoothstep(0.25, 0.85, n*0.65 + n2*0.45));
+    float pch = smoothstep(0.55, 0.9, fbm(p*0.6 + floor(uTime*0.7)*3.17));
+    col += uC * uFlash * (0.25 + pch*1.6);`,
+  vortex: `
+    vec2 d = vW.xz - uCenter; float r = length(d);
+    float a = atan(d.y, d.x) + uTime*0.12 + 22.0/(r + 8.0);
+    vec2 p = vec2(cos(a), sin(a)) * r * 0.03;
+    float n = fbm(p + uTime*0.02); float n2 = fbm(p*2.6 - uTime*0.05);
+    vec3 col = mix(uA, uB, smoothstep(0.25, 0.85, n*0.65 + n2*0.45));
+    col += uC * smoothstep(45.0, 0.0, r) * (0.45 + 0.25*sin(uTime*1.7));
+    col += vec3(0.85, 0.9, 1.0) * uFlash * (0.3 + smoothstep(0.6, 0.9, n2)*1.4);`,
+};
+function hex3(THREEref, hex) { return new THREEref.Vector3(((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255); }
+function floorMaterial(kind, cfg, fogHex, fogDensity, center) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 }, uFlash: { value: 0 }, uCenter: { value: new THREE.Vector2(center[0], center[1]) },
+      uA: { value: hex3(THREE, cfg.a) }, uB: { value: hex3(THREE, cfg.b) }, uC: { value: hex3(THREE, cfg.c) },
+      uFog: { value: hex3(THREE, fogHex) }, uFogD: { value: fogDensity },
+    },
+    vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `uniform float uTime, uFlash, uFogD; uniform vec2 uCenter; uniform vec3 uA, uB, uC, uFog; varying vec3 vW;
+      ${NOISE_GLSL}
+      void main(){ ${FLOOR_FRAG[kind]}
+        float dist = length(cameraPosition - vW);
+        col = mix(col, uFog, 1.0 - exp(-uFogD*uFogD*dist*dist));
+        gl_FragColor = vec4(col, 1.0); }`,
+  });
+}
+
 /* ------------------------------------------------------------------ engine */
 export function createEngine(canvas, hooks = {}) {
   const emit = (name, ...a) => { if (hooks[name]) hooks[name](...a); };
@@ -515,19 +592,20 @@ export function createEngine(canvas, hooks = {}) {
   function buildFxPools() {
     const dustMat = () => new THREE.MeshBasicMaterial({ color: 0xcbbba0, transparent: true, opacity: 0, depthWrite: false });
     const dustGeo = new THREE.SphereGeometry(0.22, 8, 6);
-    W.dust = Array.from({ length: 18 }, () => { const m = new THREE.Mesh(dustGeo, dustMat()); m.visible = false; W.scene.add(m); return { m, life: 0, max: 1, v: V3() }; });
+    W.dust = Array.from({ length: 24 }, () => { const m = new THREE.Mesh(dustGeo, dustMat()); m.visible = false; W.scene.add(m); return { m, life: 0, max: 1, v: V3() }; });
     const ghostGeo = new THREE.CapsuleGeometry(0.42, 0.55, 4, 10);
     W.ghosts = Array.from({ length: 8 }, () => { const m = new THREE.Mesh(ghostGeo, glowMat(0xffa860, 0)); m.visible = false; W.scene.add(m); return { m, life: 0 }; });
     W.ring = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.75, 28), glowMat(0xffd8a0, 0));
     W.ring.rotation.x = -Math.PI / 2; W.ring.visible = false; W.scene.add(W.ring); W.ringLife = 0;
   }
-  function puff(x, y, z, n = 5, spread = 1, up = 1.2) {
+  function puff(x, y, z, n = 5, spread = 1, up = 1.2, color = 0xcbbba0) {
     for (let i = 0; i < n; i++) {
       const d = W.dust.find(p => p.life <= 0) || W.dust[(Math.random() * W.dust.length) | 0];
       const a = Math.random() * Math.PI * 2, s = (0.6 + Math.random()) * spread * 2.2;
       d.m.position.set(x + Math.cos(a) * 0.3, y + 0.15, z + Math.sin(a) * 0.3);
       d.v.set(Math.cos(a) * s, up * (0.4 + Math.random() * 0.6), Math.sin(a) * s);
       d.life = d.max = 0.35 + Math.random() * 0.25; d.m.visible = true; d.m.scale.setScalar(0.6);
+      if (d.m.material.color && d.m.material.color.setHex) d.m.material.color.setHex(color);
     }
   }
   function ghost() {
@@ -588,6 +666,29 @@ export function createEngine(canvas, hooks = {}) {
     W.particles = { pts, pos, cfg, seeded: false };
   }
 
+  /* ---------- floor below the course */
+  function buildFloor(d, theme, midZ) {
+    const kind = d.floor || 'pit', cfg = FLOORS[kind];
+    const level = d.level ?? (W.killY - 2);
+    W.floor = { kind, cfg, y: level, mat: null };
+    if (cfg.fog !== undefined) { W.scene.fog.color.set ? W.scene.fog.color.set(cfg.fog) : null; }
+    const fogHex = cfg.fog ?? theme.fog;
+    const plane = (mat, y, size = 700) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mat); m.rotation.x = -Math.PI / 2; m.position.set(0, y, midZ); W.scene.add(m); return m; };
+    if (cfg.pit) {
+      // stacked veils of darkness, then nothing
+      for (let i = 0; i < 7; i++) plane(new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.32, depthWrite: false, fog: false }), W.killY - 3 - i * 6);
+      plane(new THREE.MeshBasicMaterial({ color: 0x000000, fog: false }), W.killY - 48);
+      return;
+    }
+    const b = W.bounds;
+    W.floor.mat = floorMaterial(kind, cfg, fogHex, W.scene.fog.density, [(b.minX + b.maxX) / 2, midZ]);
+    plane(W.floor.mat, level);
+    if (cfg.under) {
+      W.under = new THREE.DirectionalLight(cfg.under, cfg.underI);
+      W.scene.add(W.under, W.under.target);
+    }
+  }
+
   /* ---------- decor */
   function rnd(seed) { let s = seed; return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }; }
   function buildDecor(def, theme) {
@@ -595,11 +696,7 @@ export function createEngine(canvas, hooks = {}) {
     const d = def.decor || {};
     const midZ = (b.minZ + b.maxZ) / 2, lenZ = b.maxZ - b.minZ;
     const deco = (geo, mat, x, y, z, cast = false) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = cast; m.receiveShadow = true; scene.add(m); return m; };
-    if (d.water !== undefined) {
-      const m = deco(new THREE.PlaneGeometry(400, 400), M.water, 0, d.water, midZ); m.rotation.x = -Math.PI / 2;
-    } else {
-      const m = deco(new THREE.PlaneGeometry(400, 400), new THREE.MeshBasicMaterial({ color: theme.fog }), 0, W.killY - 20, midZ); m.rotation.x = -Math.PI / 2;
-    }
+    buildFloor(d, theme, midZ);
 
     if (def.biome === 'town') {
       // rows of houses along both sides, plus the castle looming ahead
@@ -649,8 +746,9 @@ export function createEngine(canvas, hooks = {}) {
 
     if (d.tower) {
       const [cx, cz] = d.tower.c, rr = d.tower.r, hh = d.tower.h;
-      const wall = new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, hh, 32, 1, true), new THREE.MeshStandardMaterial({ map: stoneTex(), color: theme.wall, roughness: 1, side: THREE.BackSide }));
-      wall.position.set(cx, W.killY + hh / 2 - 4, cz); wall.receiveShadow = true; scene.add(wall);
+      const deep = d.floor === 'pit' ? 70 : 0;   // a pit keeps the walls going down into the dark
+      const wall = new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, hh + deep, 32, 1, true), new THREE.MeshStandardMaterial({ map: stoneTex(), color: theme.wall, roughness: 1, side: THREE.BackSide }));
+      wall.position.set(cx, W.killY + (hh - deep) / 2 - 4, cz); wall.receiveShadow = true; scene.add(wall);
       for (let i = 0; i < 18; i++) {
         const a = i / 18 * Math.PI * 2, yy = W.killY + 6 + (i % 6) * (hh / 7);
         const win = deco(new THREE.PlaneGeometry(1.4, 3.2), M.window, cx + Math.sin(a) * (rr - 0.05), yy, cz + Math.cos(a) * (rr - 0.05));
@@ -666,9 +764,6 @@ export function createEngine(canvas, hooks = {}) {
         deco(new THREE.CylinderGeometry(3 + rr() * 3, 4 + rr() * 3, h, 10), M.wall, tx, W.killY - 10 + h / 2, tz);
         deco(new THREE.ConeGeometry(5 + rr() * 2, 12 + rr() * 8, 10), M.roof, tx, W.killY - 10 + h + 7, tz);
       }
-      // cloud sea
-      const cloud = deco(new THREE.PlaneGeometry(500, 500), new THREE.MeshBasicMaterial({ color: 0x5a6680, transparent: true, opacity: 0.55, depthWrite: false }), 0, W.killY - 4, midZ);
-      cloud.rotation.x = -Math.PI / 2;
     }
 
     // stage-specific columns under platforms so nothing floats unexplained (castle/summit)
@@ -1128,6 +1223,12 @@ export function createEngine(canvas, hooks = {}) {
     for (const s of W.spikes) {
       if (s.state === 'up' && Math.abs(cx - s.x) < s.w / 2 + R * 0.4 && Math.abs(cz - s.z) < s.d / 2 + R * 0.4 && P.pos.y < s.y + 0.6 && P.pos.y > s.y - 0.5) { die('spikes'); return; }
     }
+    const fl = W.floor;
+    if (fl && fl.cfg.deadly && P.pos.y < fl.y - 0.15) {
+      puff(P.pos.x, fl.y, P.pos.z, 12, 1.6, 4, fl.cfg.splash);
+      emit('sound', fl.cfg.sound);
+      die(fl.kind); return;
+    }
     if (P.pos.y < W.killY) die('fall');
   }
 
@@ -1279,6 +1380,12 @@ export function createEngine(canvas, hooks = {}) {
       if (W.nextFlash <= 0) { W.flash = 1; W.nextFlash = 6 + Math.random() * 9; emit('sound', 'thunder'); shake(0.12); }
     }
     W.flash = Math.max(0, W.flash - dt * 3);
+    if (W.floor && W.floor.mat) { W.floor.mat.uniforms.uTime.value = time; W.floor.mat.uniforms.uFlash.value = W.flash; }
+    if (W.under) {
+      const c = W.floor.cfg, k = W.floor.kind === 'lava' ? 0.85 + 0.15 * Math.sin(time * 3.1) : 1;
+      W.under.intensity = c.underI * k * (1 + W.flash * 2);
+      W.under.position.set(P.pos.x + 4, W.floor.y - 30, P.pos.z + 6); W.under.target.position.copy(P.pos);
+    }
     W.hemi.intensity = W.theme.hemiI * (1 + W.flash * (Math.random() < 0.5 ? 2.5 : 1.2));
   }
 

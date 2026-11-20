@@ -58,5 +58,7 @@ export class PlaneGeometry extends Geo {}
 export class CircleGeometry extends Geo {}
 export class RingGeometry extends Geo {}
 export class IcosahedronGeometry extends Geo {}
+export class ShaderMaterial extends Material {}
+export class Vector2 { constructor(x = 0, y = 0) { this.x = x; this.y = y; } }
 export class Raycaster { set() {} intersectObjects() { return []; } }
 export const RepeatWrapping = 1, SRGBColorSpace = 'srgb', PCFSoftShadowMap = 2, ACESFilmicToneMapping = 4, AdditiveBlending = 2, DoubleSide = 2, BackSide = 1;

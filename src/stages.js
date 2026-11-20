@@ -39,7 +39,7 @@ export const BIOMES = [
 export const STAGES = [
   /* ============================================================ 1-1 */
   {
-    id: '1-1', biome: 'town', name: 'Lowtown Market', seed: 11, killY: -6, tempo: 1.1, decor: { water: -4, ground: -3 },
+    id: '1-1', biome: 'town', name: 'Lowtown Market', seed: 11, killY: -6, tempo: 1.1, decor: { floor: 'water', level: -3.5, ground: -3.5 },
     parts: [
       box(0, 0, 0, 16, 2, 14),
       bonfire(-4, 0, 3, [-2, 0, 4], { start: true }),
@@ -74,7 +74,7 @@ export const STAGES = [
   },
   /* ============================================================ 1-2 */
   {
-    id: '1-2', biome: 'town', name: 'Highstreet Rooftops', seed: 23, killY: -6, tempo: 1.15, decor: { ground: -4 },
+    id: '1-2', biome: 'town', name: 'Highstreet Rooftops', seed: 23, killY: -6, tempo: 1.15, decor: { floor: 'water', level: -3.5, ground: -3.5 },
     parts: [
       box(0, 0, 0, 12, 2, 12),
       bonfire(-3, 0, 3, [-1.5, 0, 4], { start: true }),
@@ -110,7 +110,7 @@ export const STAGES = [
   },
   /* ============================================================ 1-3 */
   {
-    id: '1-3', biome: 'town', name: 'The Drawbridge', seed: 37, killY: -3, tempo: 1.2, decor: { water: -1.5, ground: -1.5 },
+    id: '1-3', biome: 'town', name: 'The Drawbridge', seed: 37, killY: -3, tempo: 1.2, decor: { floor: 'water', level: -1.5, ground: -1.5 },
     parts: [
       box(0, 0, 0, 12, 2, 10),
       bonfire(-3, 0, 2, [-1.5, 0, 3], { start: true }),
@@ -152,7 +152,7 @@ export const STAGES = [
   },
   /* ============================================================ 2-1 */
   {
-    id: '2-1', biome: 'castle', name: 'The Great Hall', seed: 41, killY: -8, tempo: 1.25, decor: { supports: true },
+    id: '2-1', biome: 'castle', name: 'The Great Hall', seed: 41, killY: -8, tempo: 1.25, decor: { supports: true, floor: 'lava', level: -6 },
     parts: [
       box(0, 0, 0, 12, 2, 10),
       bonfire(-3, 0, 2, [-1.5, 0, 3], { start: true }),
@@ -217,11 +217,11 @@ export const STAGES = [
     parts.push(box(0, 22.5, -11, 8, 1.5, 6));
     parts.push(goal(0, 22.5, -9.5, 'gate'));
     parts.push(light(10, 6, -20), light(-10, 14, -20), light(0, 20, -32));
-    return { id: '2-2', biome: 'castle', name: 'The Rising Keep', seed: 53, killY: -8, tempo: 1.25, decor: { tower: { c: C, r: 14, h: 48 } }, parts };
+    return { id: '2-2', biome: 'castle', name: 'The Rising Keep', seed: 53, killY: -8, tempo: 1.25, decor: { tower: { c: C, r: 14, h: 48 }, floor: 'pit' }, parts };
   })(),
   /* ============================================================ 2-3 */
   {
-    id: '2-3', biome: 'castle', name: 'The Clockwork Gallery', seed: 67, killY: -8, tempo: 1.3, decor: { supports: true },
+    id: '2-3', biome: 'castle', name: 'The Clockwork Gallery', seed: 67, killY: -8, tempo: 1.3, decor: { supports: true, floor: 'goop', level: -6 },
     parts: [
       box(0, 0, 0, 10, 2, 8),
       bonfire(-3, 0, 2, [-1.5, 0, 3], { start: true }),
@@ -259,7 +259,7 @@ export const STAGES = [
   },
   /* ============================================================ 3-1 */
   {
-    id: '3-1', biome: 'summit', name: 'The Ramparts', seed: 71, killY: 2, tempo: 1.3,
+    id: '3-1', biome: 'summit', name: 'The Ramparts', seed: 71, killY: 2, tempo: 1.3, decor: { floor: 'storm', level: 3.5 },
     parts: [
       box(0, 10, 0, 8, 2, 8),
       bonfire(-2, 10, 2, [-1, 10, 3], { start: true }),
@@ -293,7 +293,7 @@ export const STAGES = [
   },
   /* ============================================================ 3-2 */
   {
-    id: '3-2', biome: 'summit', name: 'The Bell Tower', seed: 83, killY: 12, tempo: 1.35,
+    id: '3-2', biome: 'summit', name: 'The Bell Tower', seed: 83, killY: 12, tempo: 1.35, decor: { floor: 'storm', level: 13.5 },
     parts: [
       box(0, 20, 0, 8, 2, 8),
       bonfire(-2, 20, 2, [-1, 20, 3], { start: true }),
@@ -331,7 +331,7 @@ export const STAGES = [
   },
   /* ============================================================ 3-3 */
   {
-    id: '3-3', biome: 'summit', name: 'The Spire', seed: 97, killY: 22, tempo: 1.4,
+    id: '3-3', biome: 'summit', name: 'The Spire', seed: 97, killY: 22, tempo: 1.4, decor: { floor: 'vortex', level: 23.5 },
     parts: [
       box(0, 30, 0, 8, 2, 8),
       bonfire(-2, 30, 2, [-1, 30, 3], { start: true }),

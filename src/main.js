@@ -2,7 +2,7 @@
 import { createEngine } from './engine.js';
 import { STAGES, BIOMES } from './stages.js';
 
-export const BUILD = '0.3.0';
+export const BUILD = '0.3.1';
 const $ = id => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const fmt = t => { const m = Math.floor(t / 60), s = t - m * 60; return String(m).padStart(2, '0') + ':' + s.toFixed(2).padStart(5, '0'); };
@@ -46,6 +46,9 @@ const sfx = {
   longjump: () => { tone(180, 0.2, 'triangle', 0.1, 2.6); noise(0.2, 0.06, 900); },
   dash: () => { noise(0.22, 0.14, 1400, 0.8, 'bandpass'); tone(420, 0.12, 'sawtooth', 0.04, 0.6); },
   slide: () => noise(0.4, 0.1, 700, 0.6),
+  splash: () => { noise(0.6, 0.22, 900, 0.6); tone(140, 0.3, 'sine', 0.12, 0.5); },
+  sizzle: () => { noise(0.9, 0.2, 3200, 0.5, 'highpass'); tone(90, 0.5, 'sawtooth', 0.06, 0.5); },
+  glop: () => { tone(120, 0.25, 'sine', 0.18, 2.2); tone(70, 0.4, 'sine', 0.14, 0.6, 0.08); noise(0.3, 0.08, 500); },
   lantern: () => { tone(523, 0.5, 'triangle', 0.07, 1.2); tone(784, 0.6, 'sine', 0.05, 0, 0.08); },
   land: () => { tone(95, 0.12, 'sine', 0.18, 0.5); noise(0.08, 0.06, 400); },
   soul: () => { tone(880, 0.25, 'sine', 0.08, 1.5); tone(1320, 0.3, 'sine', 0.06, 0, 0.07); },
@@ -72,10 +75,10 @@ try {
   engine = createEngine(canvas, {
     death: onDeath,
     goal: onGoal,
-    bonfire: (isNew) => { if (isNew) { sfx.bonfire(); banner('BONFIRE LIT', 'lit', 2.2); } },
+    bonfire: (isNew) => { if (isNew) { sfx.bonfire(); banner('BONFIRE LIT', 'lit', 1.0); } },
     lantern: () => { sfx.lantern(); toast('Lantern lit'); },
     soul: () => { sfx.soul(); pulseSouls(); },
-    retrieved: () => { sfx.soul(); pulseSouls(); banner('SOULS RETRIEVED', 'lit', 1.6); },
+    retrieved: () => { sfx.soul(); pulseSouls(); toast('Souls retrieved'); },
     note: showNote,
     sound: (name) => {
       if (name === 'arrow') { const now = performance.now(); if (now - lastArrowSfx < 250) return; lastArrowSfx = now; }
@@ -225,7 +228,7 @@ function startStage(i) {
   $('eyebrow').textContent = `${biome.name} · ${st.id}`;
   $('room').textContent = st.name;
   hud.cache = {}; showNote(null);
-  banner(st.name.toUpperCase(), 'title', 2.2);
+  banner(st.name.toUpperCase(), 'title', 1.3);
   lockPointer(); canvas.focus();
 }
 function restartStage() { engine.resetStage(); runTime = 0; deaths = 0; mode = 'play'; show(null); hideBanner(); jumpQueued = false; lockPointer(); canvas.focus(); }
@@ -233,7 +236,7 @@ function pause() { if (mode !== 'play') return; mode = 'paused'; show('pauseScre
 function resume() { if (mode !== 'paused') return; mode = 'play'; show(null); jumpQueued = false; lockPointer(); canvas.focus(); }
 
 // quick respawn keeps the pace up; the bloodstain still costs you if you die again
-function onDeath() { mode = 'dead'; deadTimer = 1.25; deaths++; sfx.death(); banner('YOU DIED', 'died', 1.2); }
+function onDeath() { mode = 'dead'; deadTimer = 1.25; deaths++; sfx.death(); banner('YOU DIED', 'died', 1.15); }
 function onGoal() {
   mode = 'clear'; sfx.win(); exitLock();
   const st = STAGES[stageIdx], total = st.parts.flat(3).filter(p => p.t === 'soul').length, souls = Math.round(engine.souls / 100);
@@ -281,11 +284,12 @@ function updateHud() {
 let bannerTimer = 0;
 function banner(text, cls, dur) {
   const el = $('banner'); el.className = 'banner ' + cls; $('bannerText').textContent = text;
+  el.style.setProperty('--dur', dur + 's');
   el.hidden = true; void el.offsetWidth; el.hidden = false; bannerTimer = dur;
 }
 function hideBanner() { $('banner').hidden = true; bannerTimer = 0; }
 let toastTimer = 0;
-function toast(text) { const el = $('toast'); el.textContent = text; el.hidden = true; void el.offsetWidth; el.hidden = false; toastTimer = 1.6; }
+function toast(text, dur = 0.9) { const el = $('toast'); el.textContent = text; el.style.setProperty('--dur', dur + 's'); el.hidden = true; void el.offsetWidth; el.hidden = false; toastTimer = dur; }
 let speedLvl = 0;
 let noteText = null;
 function showNote(text) {
